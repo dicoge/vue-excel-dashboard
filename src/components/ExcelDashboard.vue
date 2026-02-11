@@ -11,6 +11,11 @@
 
         <input type="file" accept=".xlsx,.xls" @change="uploadExcel" />
 
+        <!-- ✅ Cloud API -->
+        <button class="cloud" @click="loadFromCloud">
+          📡 從雲端同步
+        </button>
+
         <button class="export" @click="exportExcel">
           匯出 Excel
         </button>
@@ -192,6 +197,23 @@ async function loadFromUrl() {
   activeSheetIndex.value = 0
 }
 
+async function loadFromCloud() {
+  try {
+    const apiUrl =
+      "https://excelproxy.kin169999.workers.dev/api/excel"
+
+    const res = await axios.get(apiUrl, {
+      responseType: "arraybuffer"
+    })
+
+    sheets.value = parseExcel(res.data)
+    activeSheetIndex.value = 0
+  } catch (err) {
+    console.error(err)
+    alert("雲端 Excel 讀取失敗")
+  }
+}
+
 function uploadExcel(e) {
   const file = e.target.files[0]
   if (!file) return
@@ -292,6 +314,10 @@ function exportExcel() {
 
 .actions button.export {
   background: #16a34a;
+}
+
+.actions button.cloud {
+  background: #0ea5e9;
 }
 
 /* ===== Body ===== */
