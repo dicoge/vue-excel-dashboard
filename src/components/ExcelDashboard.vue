@@ -9,6 +9,10 @@
         <input v-model="excelUrl" placeholder="輸入 Excel 網址" />
         <button @click="loadFromUrl">用網址載入</button>
 
+        <button class="cloud" @click="loadFromCloud">
+          ☁ 從雲端載入
+        </button>
+
         <input type="file" accept=".xlsx,.xls" @change="uploadExcel" />
 
         <button class="export" @click="exportExcel">
@@ -19,7 +23,7 @@
 
     <div class="body">
 
-      <!-- ===== Sidebar ===== -->
+      <!-- Sidebar -->
       <aside class="sidebar">
         <div
           v-for="(sheet, idx) in sheets"
@@ -31,13 +35,11 @@
         </div>
       </aside>
 
-      <!-- ===== Main ===== -->
+      <!-- Main -->
       <main class="main" v-if="activeSheet">
-
         <div class="table-wrap">
           <table>
 
-            <!-- ===== Header ===== -->
             <thead>
               <tr>
                 <th v-for="h in DISPLAY_HEADERS" :key="h">
@@ -46,7 +48,6 @@
               </tr>
             </thead>
 
-            <!-- ===== Body ===== -->
             <tbody>
               <tr
                 v-for="(row, r) in activeSheet.data"
@@ -62,7 +63,6 @@
                   :class="{ error: isInvalidCell(row) }"
                 >
 
-                  <!-- 類型 -->
                   <select
                     v-if="c === TYPE_COL_INDEX"
                     v-model.number="activeSheet.data[r][c]"
@@ -78,7 +78,6 @@
                     </option>
                   </select>
 
-                  <!-- 標題 -->
                   <select
                     v-else-if="c === TITLE_COL_INDEX"
                     v-model="activeSheet.data[r][c]"
@@ -94,7 +93,6 @@
                     </option>
                   </select>
 
-                  <!-- 數字 -->
                   <input
                     v-else-if="c === MIN_COL_INDEX || c === MAX_COL_INDEX"
                     type="number"
@@ -104,7 +102,6 @@
                     @input="checkAutoAdd(r)"
                   />
 
-                  <!-- 文字 -->
                   <div
                     v-else
                     contenteditable
@@ -120,11 +117,9 @@
 
           </table>
         </div>
-
       </main>
 
     </div>
-
   </div>
 </template>
 
@@ -135,11 +130,16 @@ import * as XLSX from "xlsx"
 import { parseExcel } from "../utils/excel"
 
 /* =============================
-   固定設定
+   設定
 ============================= */
 
-const DATA_START_ROW = 5
+const CLOUD_API = "https://excelproxy.kin169999.workers.dev"
+
 const COL_COUNT = 7
+const MIN_COL_INDEX = 2
+const MAX_COL_INDEX = 3
+const TITLE_COL_INDEX = 5
+const TYPE_COL_INDEX = 6
 
 const DISPLAY_HEADERS = [
   "魚種類型",
@@ -150,11 +150,6 @@ const DISPLAY_HEADERS = [
   "標題",
   "類型"
 ]
-
-const MIN_COL_INDEX = 2
-const MAX_COL_INDEX = 3
-const TITLE_COL_INDEX = 5
-const TYPE_COL_INDEX = 6
 
 const TYPE_OPTIONS = [
   { value: 0, label: "一般魚" },
@@ -187,6 +182,14 @@ async function loadFromUrl() {
     responseType: "arraybuffer"
   })
   sheets.value = parseExcel(res.data)
+  ensureEmptyRow()
+}
+
+async function loadFromCloud() {
+  const res = await axios.get(CLOUD_API, {
+    responseType: "arraybuffer"
+  })
+  sheets.value = parseExcel(res.data)
   activeSheetIndex.value = 0
   ensureEmptyRow()
 }
@@ -197,7 +200,6 @@ function uploadExcel(e) {
   const reader = new FileReader()
   reader.onload = evt => {
     sheets.value = parseExcel(evt.target.result)
-    activeSheetIndex.value = 0
     ensureEmptyRow()
   }
   reader.readAsArrayBuffer(file)
@@ -209,7 +211,7 @@ function switchSheet(idx) {
 }
 
 /* =============================
-   空白行處理
+   空白行
 ============================= */
 
 function createEmptyRow() {
@@ -245,14 +247,11 @@ function checkAutoAdd(rowIndex) {
 
 function isInvalidRow(row) {
   if (isRowEmpty(row)) return false
-
   const min = Number(row[MIN_COL_INDEX])
   const max = Number(row[MAX_COL_INDEX])
-
   if (!row[1]) return true
   if (isNaN(min) || isNaN(max)) return true
   if (min > max) return true
-
   return false
 }
 
@@ -296,114 +295,24 @@ function exportExcel() {
 </script>
 
 <style scoped>
-.layout {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: #020617;
-  color: #e5e7eb;
-}
-
-.topbar {
-  height: 60px;
-  border-bottom: 1px solid #1e293b;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-}
-
-.actions {
-  display: flex;
-  gap: 10px;
-}
-
-.actions button.export {
-  background: #16a34a;
-}
-
-.body {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-}
-
-.sidebar {
-  width: 220px;
-  border-right: 1px solid #1e293b;
-  padding: 10px;
-}
-
-.sheet-btn {
-  padding: 10px;
-  margin-bottom: 6px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.sheet-btn.active {
-  background: #2563eb;
-}
-
-.main {
-  flex: 1;
-  padding: 10px;
-}
-
-.table-wrap {
-  height: 100%;
-  overflow: auto;
-  border: 1px solid #1e293b;
-  border-radius: 8px;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-}
-
-thead th {
-  position: sticky;
-  top: 0;
-  background: linear-gradient(180deg, #0f172a, #020617);
-  padding: 10px;
-  font-weight: 700;
-}
-
-tr.row-0 td {
-  background: #020617;
-}
-
-tr.row-1 td {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-tr.row-error td {
-  background: rgba(220, 38, 38, 0.18) !important;
-}
-
-td {
-  border-bottom: 1px solid #1e293b;
-  padding: 6px;
-}
-
-td.error {
-  outline: 2px solid #dc2626;
-}
-
-.select,
-.number-input {
-  width: 100%;
-  background: #020617;
-  color: white;
-  border: 1px solid #334155;
-  padding: 4px;
-  border-radius: 4px;
-}
-
-.editable {
-  min-height: 22px;
-  outline: none;
-}
+.layout { height: 100vh; display: flex; flex-direction: column; background: #020617; color: #e5e7eb; }
+.topbar { height: 60px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+.actions { display: flex; gap: 10px; }
+.actions button.export { background: #16a34a; }
+.actions button.cloud { background: #2563eb; }
+.body { flex: 1; display: flex; overflow: hidden; }
+.sidebar { width: 220px; border-right: 1px solid #1e293b; padding: 10px; }
+.sheet-btn { padding: 10px; margin-bottom: 6px; border-radius: 6px; cursor: pointer; }
+.sheet-btn.active { background: #2563eb; }
+.main { flex: 1; padding: 10px; }
+.table-wrap { height: 100%; overflow: auto; border: 1px solid #1e293b; border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+thead th { position: sticky; top: 0; background: linear-gradient(180deg, #0f172a, #020617); padding: 10px; font-weight: 700; }
+tr.row-0 td { background: #020617; }
+tr.row-1 td { background: rgba(255,255,255,0.06); }
+tr.row-error td { background: rgba(220,38,38,0.18)!important; }
+td { border-bottom: 1px solid #1e293b; padding: 6px; }
+td.error { outline: 2px solid #dc2626; }
+.select, .number-input { width: 100%; background: #020617; color: white; border: 1px solid #334155; padding: 4px; border-radius: 4px; }
+.editable { min-height: 22px; outline: none; }
 </style>
