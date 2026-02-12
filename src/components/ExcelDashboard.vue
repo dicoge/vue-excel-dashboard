@@ -1,6 +1,7 @@
 <template>
   <div class="layout">
 
+    <!-- ===== Top Bar ===== -->
     <header class="topbar">
       <h1>🐟 魚種圖鑑 Excel 管理系統</h1>
 
@@ -22,18 +23,21 @@
 
     <div class="body">
 
+      <!-- ===== Sidebar ===== -->
       <aside class="sidebar">
         <div
           v-for="(sheet, idx) in sheets"
           :key="sheet.name"
           :class="['sheet-btn', { active: idx === activeSheetIndex }]"
-          @click="switchSheet(idx)"
+          @click="activeSheetIndex = idx"
         >
           {{ sheet.name }}
         </div>
       </aside>
 
+      <!-- ===== Main ===== -->
       <main class="main" v-if="activeSheet">
+
         <div class="table-wrap">
           <table>
 
@@ -47,7 +51,7 @@
 
             <tbody>
               <tr
-                v-for="(row, r) in rows"
+                v-for="(row, r) in displayRows"
                 :key="r"
                 :class="[
                   'row-' + (r % 2),
@@ -57,13 +61,14 @@
                 <td
                   v-for="(cell, c) in row"
                   :key="c"
+                  :class="{ error: isInvalidCell(row, c) }"
                 >
 
+                  <!-- 類型 -->
                   <select
                     v-if="c === TYPE_COL_INDEX"
-                    v-model.number="row[c]"
+                    v-model.number="displayRows[r][c]"
                     class="select"
-                    @change="checkAutoAdd(r)"
                   >
                     <option
                       v-for="opt in TYPE_OPTIONS"
@@ -74,11 +79,11 @@
                     </option>
                   </select>
 
+                  <!-- 標題 -->
                   <select
                     v-else-if="c === TITLE_COL_INDEX"
-                    v-model="row[c]"
+                    v-model="displayRows[r][c]"
                     class="select"
-                    @change="checkAutoAdd(r)"
                   >
                     <option
                       v-for="opt in TITLE_OPTIONS"
@@ -89,23 +94,21 @@
                     </option>
                   </select>
 
+                  <!-- 倍率 -->
                   <input
                     v-else-if="c === MIN_COL_INDEX || c === MAX_COL_INDEX"
                     type="number"
                     min="0"
                     class="number-input"
-                    v-model.number="row[c]"
-                    @input="checkAutoAdd(r)"
+                    v-model.number="displayRows[r][c]"
                   />
 
-                  <div
+                  <!-- 其他 -->
+                  <input
                     v-else
-                    contenteditable
-                    class="editable"
-                    @input="updateCell(r, c, $event)"
-                  >
-                    {{ cell }}
-                  </div>
+                    class="text-input"
+                    v-model="displayRows[r][c]"
+                  />
 
                 </td>
               </tr>
@@ -113,9 +116,11 @@
 
           </table>
         </div>
+
       </main>
 
     </div>
+
   </div>
 </template>
 
@@ -124,9 +129,6 @@ import { ref, computed } from "vue"
 import axios from "axios"
 import * as XLSX from "xlsx"
 import { parseExcel } from "../utils/excel"
-
-const CLOUD_API =
-  "https://excelproxy.kin169999.workers.dev/"
 
 const DATA_START_ROW = 5
 const COL_COUNT = 7
@@ -161,27 +163,13 @@ const excelUrl = ref("")
 const sheets = ref([])
 const activeSheetIndex = ref(0)
 
-const activeSheet = computed(() => sheets.value[activeSheetIndex.value])
-
-/* ===== 載入 ===== */
-
-async function loadFromUrl() {
-  if (!excelUrl.value) return
-  const res = await axios.get(excelUrl.value, {
-    responseType: "arraybuffer"
-  })
-  sheets.value = parseExcel(res.data)
-  activeSheetIndex.value = 0
-  ensureEmptyRow()
-}
-
 async function loadFromCloud() {
-  const res = await axios.get(CLOUD_API, {
-    responseType: "arraybuffer"
-  })
+  const res = await axios.get(
+    "https://excelproxy.kin169999.workers.dev/api/excel",
+    { responseType: "arraybuffer" }
+  )
   sheets.value = parseExcel(res.data)
   activeSheetIndex.value = 0
-  ensureEmptyRow()
 }
 
 function uploadExcel(e) {
@@ -191,95 +179,40 @@ function uploadExcel(e) {
   reader.onload = evt => {
     sheets.value = parseExcel(evt.target.result)
     activeSheetIndex.value = 0
-    ensureEmptyRow()
   }
   reader.readAsArrayBuffer(file)
 }
 
-function switchSheet(idx) {
-  activeSheetIndex.value = idx
-  ensureEmptyRow()
-}
+const activeSheet = computed(() => sheets.value[activeSheetIndex.value])
 
-/* ===== 行資料（隱藏前五行）===== */
-
-const rows = computed(() => {
+const displayRows = computed(() => {
   if (!activeSheet.value) return []
-  return activeSheet.value.data.slice(DATA_START_ROW)
+  return activeSheet.value.data
+    .slice(DATA_START_ROW)
+    .map(row => row.slice(0, COL_COUNT))
 })
 
-/* ===== 空白行機制 ===== */
-
-function createEmptyRow() {
-  return new Array(COL_COUNT).fill("")
-}
-
-function isRowEmpty(row) {
-  return row.every(cell => cell === "" || cell === undefined)
-}
-
-function ensureEmptyRow() {
-  if (!activeSheet.value) return
-
-  const data = activeSheet.value.data
-
-  if (data.length === DATA_START_ROW) {
-    data.push(createEmptyRow())
-    return
-  }
-
-  const last = data[data.length - 1]
-
-  if (!isRowEmpty(last)) {
-    data.push(createEmptyRow())
-  }
-}
-
-function checkAutoAdd(rowIndex) {
-  const realIndex = rowIndex + DATA_START_ROW
-  const row = activeSheet.value.data[realIndex]
-
-  if (
-    realIndex === activeSheet.value.data.length - 1 &&
-    !isRowEmpty(row) &&
-    !isInvalidRow(row)
-  ) {
-    ensureEmptyRow()
-  }
-}
-
-/* ===== 驗證 ===== */
-
 function isInvalidRow(row) {
-  if (isRowEmpty(row)) return false
-
   const min = Number(row[MIN_COL_INDEX])
   const max = Number(row[MAX_COL_INDEX])
-
-  if (!row[1]) return true
-  if (isNaN(min) || isNaN(max)) return true
-  if (min > max) return true
-
-  return false
+  return !isNaN(min) && !isNaN(max) && min > max
 }
 
-/* ===== 編輯 ===== */
-
-function updateCell(rowIndex, colIndex, e) {
-  const realIndex = rowIndex + DATA_START_ROW
-  activeSheet.value.data[realIndex][colIndex] =
-    e.target.innerText
-
-  checkAutoAdd(rowIndex)
+function isInvalidCell(row, col) {
+  if (col !== MIN_COL_INDEX && col !== MAX_COL_INDEX) return false
+  return isInvalidRow(row)
 }
-
-/* ===== 匯出 ===== */
 
 function exportExcel() {
   const wb = XLSX.utils.book_new()
 
   sheets.value.forEach(sheet => {
-    const ws = XLSX.utils.aoa_to_sheet(sheet.data)
+    const data = sheet.data.map((r, i) => {
+      if (i < DATA_START_ROW) return r
+      return r.slice(0, COL_COUNT)
+    })
+
+    const ws = XLSX.utils.aoa_to_sheet(data)
     XLSX.utils.book_append_sheet(wb, ws, sheet.name)
   })
 
@@ -288,23 +221,90 @@ function exportExcel() {
 </script>
 
 <style scoped>
-.layout { height: 100vh; display: flex; flex-direction: column; background: #020617; color: #e5e7eb; }
-.topbar { height: 60px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
-.actions { display: flex; gap: 10px; }
-.actions button.export { background: #16a34a; }
-.actions button.cloud { background: #0ea5e9; }
-.body { flex: 1; display: flex; overflow: hidden; }
-.sidebar { width: 220px; border-right: 1px solid #1e293b; padding: 10px; }
-.sheet-btn { padding: 10px; margin-bottom: 6px; border-radius: 6px; cursor: pointer; }
-.sheet-btn.active { background: #2563eb; }
-.main { flex: 1; padding: 10px; }
-.table-wrap { height: 100%; overflow: auto; border: 1px solid #1e293b; border-radius: 8px; }
-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-thead th { position: sticky; top: 0; background: linear-gradient(180deg, #0f172a, #020617); padding: 10px; font-weight: 700; }
-tr.row-0 td { background: #020617; }
-tr.row-1 td { background: rgba(255,255,255,0.06); }
-tr.row-error td { background: rgba(220,38,38,0.18)!important; }
-td { border-bottom: 1px solid #1e293b; padding: 6px; }
-.select, .number-input { width: 100%; background: #020617; color: white; border: 1px solid #334155; padding: 4px; border-radius: 4px; }
-.editable { min-height: 22px; outline: none; }
+.layout {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #020617;
+  color: #e5e7eb;
+}
+
+.topbar {
+  height: 60px;
+  border-bottom: 1px solid #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 220px;
+  border-right: 1px solid #1e293b;
+  padding: 10px;
+}
+
+.sheet-btn {
+  padding: 10px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sheet-btn.active {
+  background: #2563eb;
+}
+
+.main {
+  flex: 1;
+  padding: 10px;
+}
+
+.table-wrap {
+  height: 100%;
+  overflow: auto;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: #0f172a;
+  padding: 10px;
+  text-align: left;
+}
+
+td {
+  padding: 6px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.text-input,
+.number-input,
+.select {
+  width: 100%;
+  min-width: 120px;
+  background: #020617;
+  color: white;
+  border: 1px solid #334155;
+  padding: 4px;
+  border-radius: 4px;
+}
 </style>
