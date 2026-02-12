@@ -11,11 +11,6 @@
 
         <input type="file" accept=".xlsx,.xls" @change="uploadExcel" />
 
-        <!-- ✅ Cloud API -->
-        <button class="cloud" @click="loadFromCloud">
-          📡 從雲端同步
-        </button>
-
         <button class="export" @click="exportExcel">
           匯出 Excel
         </button>
@@ -30,7 +25,7 @@
           v-for="(sheet, idx) in sheets"
           :key="sheet.name"
           :class="['sheet-btn', { active: idx === activeSheetIndex }]"
-          @click="activeSheetIndex = idx"
+          @click="switchSheet(idx)"
         >
           {{ sheet.name }}
         </div>
@@ -40,7 +35,6 @@
       <main class="main" v-if="activeSheet">
 
         <div class="table-wrap">
-
           <table>
 
             <!-- ===== Header ===== -->
@@ -55,7 +49,7 @@
             <!-- ===== Body ===== -->
             <tbody>
               <tr
-                v-for="(row, r) in rows"
+                v-for="(row, r) in activeSheet.data"
                 :key="r"
                 :class="[
                   'row-' + (r % 2),
@@ -63,18 +57,17 @@
                 ]"
               >
                 <td
-                  v-for="(cell, c) in row"
+                  v-for="(cell, c) in row.slice(0, COL_COUNT)"
                   :key="c"
-                  :class="{
-                    error: isInvalidCell(row, c)
-                  }"
+                  :class="{ error: isInvalidCell(row) }"
                 >
 
-                  <!-- 🔽 類型 -->
+                  <!-- 類型 -->
                   <select
                     v-if="c === TYPE_COL_INDEX"
-                    v-model.number="rows[r][c]"
+                    v-model.number="activeSheet.data[r][c]"
                     class="select"
+                    @change="checkAutoAdd(r)"
                   >
                     <option
                       v-for="opt in TYPE_OPTIONS"
@@ -85,11 +78,12 @@
                     </option>
                   </select>
 
-                  <!-- 🔽 標題 -->
+                  <!-- 標題 -->
                   <select
                     v-else-if="c === TITLE_COL_INDEX"
-                    v-model="rows[r][c]"
+                    v-model="activeSheet.data[r][c]"
                     class="select"
+                    @change="checkAutoAdd(r)"
                   >
                     <option
                       v-for="opt in TITLE_OPTIONS"
@@ -100,17 +94,17 @@
                     </option>
                   </select>
 
-                  <!-- 🔢 倍率 -->
+                  <!-- 數字 -->
                   <input
                     v-else-if="c === MIN_COL_INDEX || c === MAX_COL_INDEX"
                     type="number"
                     min="0"
-                    step="1"
                     class="number-input"
-                    v-model.number="rows[r][c]"
+                    v-model.number="activeSheet.data[r][c]"
+                    @input="checkAutoAdd(r)"
                   />
 
-                  <!-- ✏ 其他 -->
+                  <!-- 文字 -->
                   <div
                     v-else
                     contenteditable
@@ -125,7 +119,6 @@
             </tbody>
 
           </table>
-
         </div>
 
       </main>
@@ -182,79 +175,88 @@ const excelUrl = ref("")
 const sheets = ref([])
 const activeSheetIndex = ref(0)
 
+const activeSheet = computed(() => sheets.value[activeSheetIndex.value])
+
 /* =============================
    載入
 ============================= */
 
 async function loadFromUrl() {
   if (!excelUrl.value) return
-
   const res = await axios.get(excelUrl.value, {
     responseType: "arraybuffer"
   })
-
   sheets.value = parseExcel(res.data)
   activeSheetIndex.value = 0
-}
-
-async function loadFromCloud() {
-  try {
-    const apiUrl =
-      "https://excelproxy.kin169999.workers.dev/api/excel"
-
-    const res = await axios.get(apiUrl, {
-      responseType: "arraybuffer"
-    })
-
-    sheets.value = parseExcel(res.data)
-    activeSheetIndex.value = 0
-  } catch (err) {
-    console.error(err)
-    alert("雲端 Excel 讀取失敗")
-  }
+  ensureEmptyRow()
 }
 
 function uploadExcel(e) {
   const file = e.target.files[0]
   if (!file) return
-
   const reader = new FileReader()
   reader.onload = evt => {
     sheets.value = parseExcel(evt.target.result)
     activeSheetIndex.value = 0
+    ensureEmptyRow()
   }
   reader.readAsArrayBuffer(file)
 }
 
+function switchSheet(idx) {
+  activeSheetIndex.value = idx
+  ensureEmptyRow()
+}
+
 /* =============================
-   計算
+   空白行處理
 ============================= */
 
-const activeSheet = computed(() => {
-  return sheets.value[activeSheetIndex.value]
-})
+function createEmptyRow() {
+  return new Array(COL_COUNT).fill("")
+}
 
-const rows = computed(() => {
-  if (!activeSheet.value) return []
+function isRowEmpty(row) {
+  return row.every(cell => cell === "" || cell === undefined)
+}
 
-  return activeSheet.value.data
-    .slice(DATA_START_ROW)
-    .map(row => row.slice(0, COL_COUNT))
-})
+function ensureEmptyRow() {
+  if (!activeSheet.value) return
+  const data = activeSheet.value.data
+  if (data.length === 0 || !isRowEmpty(data[data.length - 1])) {
+    data.push(createEmptyRow())
+  }
+}
+
+function checkAutoAdd(rowIndex) {
+  const row = activeSheet.value.data[rowIndex]
+  if (
+    rowIndex === activeSheet.value.data.length - 1 &&
+    !isRowEmpty(row) &&
+    !isInvalidRow(row)
+  ) {
+    ensureEmptyRow()
+  }
+}
 
 /* =============================
    驗證
 ============================= */
 
 function isInvalidRow(row) {
+  if (isRowEmpty(row)) return false
+
   const min = Number(row[MIN_COL_INDEX])
   const max = Number(row[MAX_COL_INDEX])
 
-  return !isNaN(min) && !isNaN(max) && min > max
+  if (!row[1]) return true
+  if (isNaN(min) || isNaN(max)) return true
+  if (min > max) return true
+
+  return false
 }
 
-function isInvalidCell(row, col) {
-  if (col !== MIN_COL_INDEX && col !== MAX_COL_INDEX) return false
+function isInvalidCell(row) {
   return isInvalidRow(row)
 }
 
@@ -262,24 +264,30 @@ function isInvalidCell(row, col) {
    編輯
 ============================= */
 
-function updateCell(row, col, e) {
-  rows.value[row][col] = e.target.innerText
+function updateCell(rowIndex, colIndex, e) {
+  activeSheet.value.data[rowIndex][colIndex] = e.target.innerText
+  checkAutoAdd(rowIndex)
 }
 
 /* =============================
-   匯出 Excel
+   匯出
 ============================= */
 
 function exportExcel() {
+  const hasInvalid = activeSheet.value.data.some(
+    row => !isRowEmpty(row) && isInvalidRow(row)
+  )
+
+  if (hasInvalid) {
+    alert("資料有錯誤，請修正後再匯出")
+    return
+  }
+
   const wb = XLSX.utils.book_new()
 
   sheets.value.forEach(sheet => {
-    const data = sheet.data.map((r, i) => {
-      if (i < DATA_START_ROW) return r
-      return r.slice(0, COL_COUNT)
-    })
-
-    const ws = XLSX.utils.aoa_to_sheet(data)
+    const cleanData = sheet.data.filter(row => !isRowEmpty(row))
+    const ws = XLSX.utils.aoa_to_sheet(cleanData)
     XLSX.utils.book_append_sheet(wb, ws, sheet.name)
   })
 
@@ -295,8 +303,6 @@ function exportExcel() {
   background: #020617;
   color: #e5e7eb;
 }
-
-/* ===== Topbar ===== */
 
 .topbar {
   height: 60px;
@@ -316,19 +322,11 @@ function exportExcel() {
   background: #16a34a;
 }
 
-.actions button.cloud {
-  background: #0ea5e9;
-}
-
-/* ===== Body ===== */
-
 .body {
   flex: 1;
   display: flex;
   overflow: hidden;
 }
-
-/* ===== Sidebar ===== */
 
 .sidebar {
   width: 220px;
@@ -346,8 +344,6 @@ function exportExcel() {
 .sheet-btn.active {
   background: #2563eb;
 }
-
-/* ===== Table ===== */
 
 .main {
   flex: 1;
@@ -375,8 +371,6 @@ thead th {
   font-weight: 700;
 }
 
-/* ===== Row 交錯 ===== */
-
 tr.row-0 td {
   background: #020617;
 }
@@ -389,8 +383,6 @@ tr.row-error td {
   background: rgba(220, 38, 38, 0.18) !important;
 }
 
-/* ===== Cell ===== */
-
 td {
   border-bottom: 1px solid #1e293b;
   padding: 6px;
@@ -399,8 +391,6 @@ td {
 td.error {
   outline: 2px solid #dc2626;
 }
-
-/* ===== Inputs ===== */
 
 .select,
 .number-input {
