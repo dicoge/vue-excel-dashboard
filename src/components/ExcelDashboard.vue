@@ -25,11 +25,11 @@
           <table>
             <thead>
               <tr>
-                <th width="40"></th>
+                <th width="32"></th>
                 <th v-for="h in DISPLAY_HEADERS" :key="h">
                   {{ h }}
                 </th>
-                <th width="70">操作</th>
+                <th width="48">操作</th>
               </tr>
             </thead>
 
@@ -47,7 +47,7 @@
               >
 
                 <!-- 拖曳 icon -->
-                <td class="drag-handle">☰</td>
+                <td class="drag-handle">⋮⋮</td>
 
                 <td
                   v-for="(cell, c) in row"
@@ -82,12 +82,20 @@
 
                 </td>
 
-                <td>
+                <td class="action-cell">
                   <button
                     class="delete-btn"
                     @click="deleteRow(r)"
                   >
-                    ❌
+                    <!-- SVG 垃圾桶 -->
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="16"
+                      height="16"
+                      fill="currentColor"
+                    >
+                      <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z"/>
+                    </svg>
                   </button>
                 </td>
 
@@ -157,10 +165,8 @@ function dragStart(index) {
 
 function dropRow(targetIndex) {
   if (dragIndex.value === null) return
-
   const moved = rows.value.splice(dragIndex.value, 1)[0]
   rows.value.splice(targetIndex, 0, moved)
-
   dragIndex.value = null
   syncToSheet()
 }
@@ -195,15 +201,76 @@ function isInvalidRow(row) {
 </script>
 
 <style scoped>
-.layout { background:#020617; color:white; height:100vh; display:flex; flex-direction:column }
+.layout {
+  background:#020617;
+  color:white;
+  height:100vh;
+  display:flex;
+  flex-direction:column;
+}
+
 .body { flex:1; display:flex }
-.sidebar { width:200px; border-right:1px solid #1e293b; padding:10px }
-.main { flex:1; padding:10px }
-table { width:100%; border-collapse:collapse }
-td, th { padding:6px; border-bottom:1px solid #1e293b }
-.row-error td { background:rgba(220,38,38,0.35) }
-.cell-editing { box-shadow: inset 0 0 0 2px #facc15 }
-.drag-handle { cursor:grab; color:#94a3b8 }
-.delete-btn { background:#dc2626; color:white; border:none; padding:4px 8px; border-radius:4px }
-.select, .text-input { width:100%; background:#020617; color:white; border:1px solid #334155; padding:4px; border-radius:4px }
+
+.sidebar {
+  width:180px;
+  border-right:1px solid #1e293b;
+  padding:8px;
+}
+
+.main { flex:1; padding:8px }
+
+table {
+  width:100%;
+  border-collapse:collapse;
+  font-size:14px;
+}
+
+td, th {
+  padding:4px 6px;
+  border-bottom:1px solid #1e293b;
+}
+
+.row-error td {
+  background:rgba(220,38,38,0.35);
+}
+
+.cell-editing {
+  box-shadow: inset 0 0 0 2px #facc15;
+}
+
+.drag-handle {
+  cursor:grab;
+  color:#64748b;
+  text-align:center;
+  font-size:14px;
+}
+
+.action-cell {
+  text-align:center;
+}
+
+.delete-btn {
+  background:transparent;
+  border:none;
+  color:#94a3b8;
+  cursor:pointer;
+  padding:2px;
+  border-radius:4px;
+  transition:0.2s;
+}
+
+.delete-btn:hover {
+  color:#ef4444;
+  background:rgba(239,68,68,0.1);
+}
+
+.select,
+.text-input {
+  width:100%;
+  background:#020617;
+  color:white;
+  border:1px solid #334155;
+  padding:3px;
+  border-radius:4px;
+}
 </style>
