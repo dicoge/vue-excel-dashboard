@@ -323,33 +323,226 @@ function exportExcel() {
 </script>
 
 <style scoped>
-.loading-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.6);
-  backdrop-filter: blur(4px);
+
+/* ===== 整體 ===== */
+.layout {
+  height: 100vh;
   display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
+  flex-direction: column;
+  background: #020617;
+  color: #e5e7eb;
+  font-family: "Segoe UI", sans-serif;
 }
 
-.loading-box {
-  text-align: center;
+/* ===== Topbar ===== */
+.topbar {
+  height: 60px;
+  border-bottom: 1px solid #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: linear-gradient(180deg, #0f172a, #020617);
+}
+
+.topbar h1 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.actions input {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: white;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.actions button {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: 0.2s;
+}
+
+.actions button:hover {
+  transform: translateY(-1px);
+}
+
+.actions button.export {
+  background: #16a34a;
   color: white;
 }
 
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 4px solid #334155;
-  border-top: 4px solid #38bdf8;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin: 0 auto 10px;
+.actions button.cloud {
+  background: #0ea5e9;
+  color: white;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+/* ===== Body ===== */
+.body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
 }
+
+/* ===== Sidebar ===== */
+.sidebar {
+  width: 220px;
+  border-right: 1px solid #1e293b;
+  padding: 10px;
+  background: #0b1220;
+}
+
+.sheet-btn {
+  padding: 10px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.sheet-btn:hover {
+  background: #1e293b;
+}
+
+.sheet-btn.active {
+  background: #2563eb;
+  color: white;
+}
+
+/* ===== Main ===== */
+.main {
+  flex: 1;
+  padding: 10px;
+}
+
+.table-wrap {
+  height: 100%;
+  overflow: auto;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  background: #020617;
+}
+
+/* ===== Table ===== */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 14px;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: linear-gradient(180deg, #0f172a, #020617);
+  padding: 10px 6px;
+  font-weight: 600;
+  border-bottom: 1px solid #1e293b;
+}
+
+/* 交錯行 */
+tbody tr:nth-child(even) td {
+  background: rgba(255,255,255,0.04);
+}
+
+tbody tr:nth-child(odd) td {
+  background: #020617;
+}
+
+/* 錯誤整行 */
+tr.row-error td {
+  background: rgba(220, 38, 38, 0.25) !important;
+}
+
+/* ===== Cell ===== */
+td {
+  border-bottom: 1px solid #1e293b;
+  padding: 6px 6px;
+  vertical-align: middle;
+}
+
+/* 編輯框提示 */
+td.cell-editing {
+  box-shadow: inset 0 0 0 2px #facc15;
+}
+
+/* 錯誤格 */
+td.error {
+  outline: 2px solid #ef4444;
+}
+
+/* ===== Inputs ===== */
+.select,
+.number-input {
+  width: 100%;
+  background: #0f172a;
+  color: white;
+  border: 1px solid #334155;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.editable {
+  min-height: 22px;
+  outline: none;
+}
+
+/* ===== 拖曳 ===== */
+.drag {
+  cursor: grab;
+  text-align: center;
+  color: #64748b;
+  width: 30px;
+}
+
+.drag:hover {
+  color: #94a3b8;
+}
+
+/* ===== 刪除按鈕 ===== */
+.delete-cell {
+  text-align: center;
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: #64748b;
+  transition: 0.2s;
+}
+
+.delete-btn:hover {
+  color: #ef4444;
+  transform: scale(1.1);
+}
+
+/* ===== Scrollbar 美化 ===== */
+.table-wrap::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.table-wrap::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.table-wrap::-webkit-scrollbar-track {
+  background: #020617;
+}
+
 </style>
+
