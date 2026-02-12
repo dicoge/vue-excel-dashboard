@@ -1,6 +1,7 @@
 <template>
   <div class="layout">
 
+    <!-- ===== Top Bar ===== -->
     <header class="topbar">
       <h1>🐟 魚種圖鑑 Excel 管理系統</h1>
 
@@ -22,20 +23,23 @@
 
     <div class="body">
 
+      <!-- Sidebar -->
       <aside class="sidebar">
         <div
           v-for="(sheet, idx) in sheets"
           :key="sheet.name"
           :class="['sheet-btn', { active: idx === activeSheetIndex }]"
-          @click="switchSheet(idx)"
+          @click="activeSheetIndex = idx"
         >
           {{ sheet.name }}
         </div>
       </aside>
 
+      <!-- Main -->
       <main class="main" v-if="activeSheet">
 
         <div class="table-wrap">
+
           <table>
 
             <thead>
@@ -43,28 +47,36 @@
                 <th v-for="h in DISPLAY_HEADERS" :key="h">
                   {{ h }}
                 </th>
-                <th width="80">操作</th>
+                <th>操作</th>
               </tr>
             </thead>
 
             <tbody>
               <tr
-                v-for="(row, r) in editableRows"
+                v-for="(row, r) in rows"
                 :key="r"
                 :class="[
                   'row-' + (r % 2),
-                  isInvalidRow(row) ? 'row-error' : '',
-                  r === editingRow ? 'row-editing' : ''
+                  isInvalidRow(row) ? 'row-error' : ''
                 ]"
               >
-                <td v-for="(cell, c) in row" :key="c">
+                <td
+                  v-for="(cell, c) in row"
+                  :key="c"
+                  :class="[
+                    isInvalidCell(row, c) ? 'error' : '',
+                    editingCell.row === r && editingCell.col === c
+                      ? 'cell-editing'
+                      : ''
+                  ]"
+                >
 
+                  <!-- 類型 -->
                   <select
                     v-if="c === TYPE_COL_INDEX"
-                    v-model.number="editableRows[r][c]"
-                    @focus="editingRow = r"
-                    @change="checkAppendRow"
+                    v-model.number="rows[r][c]"
                     class="select"
+                    @focus="setEditing(r, c)"
                   >
                     <option
                       v-for="opt in TYPE_OPTIONS"
@@ -75,12 +87,12 @@
                     </option>
                   </select>
 
+                  <!-- 標題 -->
                   <select
                     v-else-if="c === TITLE_COL_INDEX"
-                    v-model="editableRows[r][c]"
-                    @focus="editingRow = r"
-                    @change="checkAppendRow"
+                    v-model="rows[r][c]"
                     class="select"
+                    @focus="setEditing(r, c)"
                   >
                     <option
                       v-for="opt in TITLE_OPTIONS"
@@ -91,33 +103,36 @@
                     </option>
                   </select>
 
+                  <!-- 倍率 -->
                   <input
                     v-else-if="c === MIN_COL_INDEX || c === MAX_COL_INDEX"
                     type="number"
-                    v-model.number="editableRows[r][c]"
-                    @focus="editingRow = r"
-                    @input="checkAppendRow"
                     class="number-input"
+                    v-model.number="rows[r][c]"
+                    @focus="setEditing(r, c)"
                   />
 
-                  <input
+                  <!-- 其他 -->
+                  <div
                     v-else
-                    v-model="editableRows[r][c]"
-                    @focus="editingRow = r"
-                    @input="checkAppendRow"
-                    class="text-input"
-                  />
+                    contenteditable
+                    class="editable"
+                    @focus="setEditing(r, c)"
+                    @input="updateCell(r, c, $event)"
+                  >
+                    {{ cell }}
+                  </div>
 
                 </td>
 
-                <!-- 刪除按鈕 -->
-                <td>
+                <!-- 刪除 -->
+                <td class="delete-cell">
                   <button
-                    v-if="!isLastEmptyRow(r)"
+                    v-if="!isEmptyRow(row)"
                     class="delete-btn"
                     @click="deleteRow(r)"
                   >
-                    刪除
+                    ❌
                   </button>
                 </td>
 
@@ -125,12 +140,12 @@
             </tbody>
 
           </table>
+
         </div>
 
       </main>
 
     </div>
-
   </div>
 </template>
 
@@ -139,6 +154,8 @@ import { ref, computed } from "vue"
 import axios from "axios"
 import * as XLSX from "xlsx"
 import { parseExcel } from "../utils/excel"
+
+/* ============================= */
 
 const DATA_START_ROW = 5
 const COL_COUNT = 7
@@ -169,88 +186,126 @@ const TITLE_OPTIONS = [
   { value: "J", label: "金蟬大獎" }
 ]
 
+/* ============================= */
+
 const excelUrl = ref("")
 const sheets = ref([])
 const activeSheetIndex = ref(0)
-const editableRows = ref([])
-const editingRow = ref(null)
+const editingCell = ref({ row: null, col: null })
 
-function switchSheet(idx) {
-  activeSheetIndex.value = idx
-  prepareEditableRows()
+/* ============================= */
+
+function setEditing(r, c) {
+  editingCell.value = { row: r, col: c }
 }
 
-function prepareEditableRows() {
-  const sheet = sheets.value[activeSheetIndex.value]
-  if (!sheet) return
-
-  editableRows.value = sheet.data
-    .slice(DATA_START_ROW)
-    .map(r => r.slice(0, COL_COUNT))
-
-  appendEmptyRowIfNeeded()
-}
-
-function appendEmptyRowIfNeeded() {
-  const last = editableRows.value.at(-1)
-  if (!last || last.some(v => v !== "" && v != null)) {
-    editableRows.value.push(new Array(COL_COUNT).fill(""))
-  }
-}
-
-function checkAppendRow() {
-  const last = editableRows.value.at(-1)
-  if (last && last.some(v => v !== "" && v != null)) {
-    editableRows.value.push(new Array(COL_COUNT).fill(""))
-  }
-}
-
-function deleteRow(index) {
-  editableRows.value.splice(index, 1)
-  appendEmptyRowIfNeeded()
-}
-
-function isLastEmptyRow(index) {
-  return index === editableRows.value.length - 1 &&
-         editableRows.value[index].every(v => v === "")
-}
+/* ============================= */
 
 async function loadFromCloud() {
-  const res = await axios.get(
-    "https://excelproxy.kin169999.workers.dev/api/excel",
-    { responseType: "arraybuffer" }
-  )
+  const apiUrl =
+    "https://excelproxy.kin169999.workers.dev/api/excel"
+
+  const res = await axios.get(apiUrl, {
+    responseType: "arraybuffer"
+  })
+
   sheets.value = parseExcel(res.data)
-  switchSheet(0)
+  ensureEmptyRow()
+}
+
+async function loadFromUrl() {
+  if (!excelUrl.value) return
+
+  const res = await axios.get(excelUrl.value, {
+    responseType: "arraybuffer"
+  })
+
+  sheets.value = parseExcel(res.data)
+  ensureEmptyRow()
 }
 
 function uploadExcel(e) {
   const file = e.target.files[0]
   if (!file) return
+
   const reader = new FileReader()
   reader.onload = evt => {
     sheets.value = parseExcel(evt.target.result)
-    switchSheet(0)
+    ensureEmptyRow()
   }
   reader.readAsArrayBuffer(file)
 }
 
-const activeSheet = computed(() => sheets.value[activeSheetIndex.value])
+/* ============================= */
+
+const activeSheet = computed(() =>
+  sheets.value[activeSheetIndex.value]
+)
+
+const rows = computed(() => {
+  if (!activeSheet.value) return []
+
+  return activeSheet.value.data
+    .slice(DATA_START_ROW)
+    .map(r => r.slice(0, COL_COUNT))
+})
+
+/* ============================= */
+
+function ensureEmptyRow() {
+  if (!activeSheet.value) return
+
+  const data = activeSheet.value.data
+  const body = data.slice(DATA_START_ROW)
+
+  const last = body[body.length - 1]
+  if (!last || !last.some(v => v)) {
+    return
+  }
+
+  data.push(new Array(COL_COUNT).fill(""))
+}
+
+function deleteRow(index) {
+  activeSheet.value.data.splice(DATA_START_ROW + index, 1)
+  ensureEmptyRow()
+}
+
+function isEmptyRow(row) {
+  return row.every(v => !v)
+}
+
+/* ============================= */
+
+function updateCell(row, col, e) {
+  activeSheet.value.data[DATA_START_ROW + row][col] =
+    e.target.innerText
+
+  ensureEmptyRow()
+}
+
+/* ============================= */
 
 function isInvalidRow(row) {
   const min = Number(row[MIN_COL_INDEX])
   const max = Number(row[MAX_COL_INDEX])
+
   return !isNaN(min) && !isNaN(max) && min > max
 }
+
+function isInvalidCell(row, col) {
+  if (col !== MIN_COL_INDEX && col !== MAX_COL_INDEX)
+    return false
+  return isInvalidRow(row)
+}
+
+/* ============================= */
 
 function exportExcel() {
   const wb = XLSX.utils.book_new()
 
-  sheets.value.forEach((sheet) => {
-    const original = sheet.data.slice(0, DATA_START_ROW)
-    const merged = [...original, ...editableRows.value]
-
-    const ws = XLSX.utils.aoa_to_sheet(merged)
+  sheets.value.forEach(sheet => {
+    const ws = XLSX.utils.aoa_to_sheet(sheet.data)
     XLSX.utils.book_append_sheet(wb, ws, sheet.name)
   })
 
@@ -279,6 +334,14 @@ function exportExcel() {
 .actions {
   display: flex;
   gap: 10px;
+}
+
+.actions button.export {
+  background: #16a34a;
+}
+
+.actions button.cloud {
+  background: #0ea5e9;
 }
 
 .body {
@@ -319,35 +382,50 @@ function exportExcel() {
 table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: #0f172a;
+  padding: 10px;
+}
+
+tr.row-error td {
+  background: rgba(220, 38, 38, 0.35) !important;
 }
 
 td {
-  padding: 6px;
   border-bottom: 1px solid #1e293b;
+  padding: 6px;
 }
 
-.row-editing td {
-  background: rgba(59,130,246,0.25) !important;
+td.cell-editing {
+  box-shadow: inset 0 0 0 2px #facc15;
 }
 
-.delete-btn {
-  background: #dc2626;
-  color: white;
-  border: none;
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.text-input,
-.number-input,
-.select {
+.select,
+.number-input {
   width: 100%;
-  min-width: 120px;
   background: #020617;
   color: white;
   border: 1px solid #334155;
   padding: 4px;
+  border-radius: 4px;
+}
+
+.editable {
+  min-height: 22px;
+  outline: none;
+}
+
+.delete-btn {
+  background: #dc2626;
+  border: none;
+  color: white;
+  padding: 4px 8px;
+  cursor: pointer;
   border-radius: 4px;
 }
 </style>
