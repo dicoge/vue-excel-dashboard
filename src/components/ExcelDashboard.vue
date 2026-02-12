@@ -1,5 +1,14 @@
 <template>
   <div class="layout">
+
+    <!-- 🔥 Loading Overlay -->
+    <div v-if="isLoading" class="loading-overlay">
+      <div class="loading-box">
+        <div class="spinner"></div>
+        <p>正在載入 Excel...</p>
+      </div>
+    </div>
+
     <header class="topbar">
       <h1>🐟 魚種圖鑑 Excel 管理系統</h1>
 
@@ -117,7 +126,7 @@
                   </div>
                 </td>
 
-                <td class="delete-cell">
+                <td>
                   <button
                     v-if="!isEmptyRow(row)"
                     class="delete-btn"
@@ -136,7 +145,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from "vue"
+import { ref, computed } from "vue"
 import axios from "axios"
 import * as XLSX from "xlsx"
 import { parseExcel } from "../utils/excel"
@@ -175,6 +184,7 @@ const sheets = ref([])
 const activeSheetIndex = ref(0)
 const editingCell = ref({ row: null, col: null })
 const dragIndex = ref(null)
+const isLoading = ref(false)
 
 const activeSheet = computed(() => sheets.value[activeSheetIndex.value])
 
@@ -191,8 +201,6 @@ const rows = computed(() => {
 
 function switchSheet(index) {
   activeSheetIndex.value = index
-  editingCell.value = { row: null, col: null }
-  dragIndex.value = null
   ensureEmptyRow()
 }
 
@@ -254,43 +262,52 @@ function dragStart(index) {
 
 function dropRow(targetIndex) {
   if (dragIndex.value === null) return
-  if (isEmptyRow(rows.value[targetIndex])) return
-
   const from = DATA_START_ROW + dragIndex.value
   const to = DATA_START_ROW + targetIndex
-
   const data = activeSheet.value.data
   const moved = data.splice(from, 1)[0]
   data.splice(to, 0, moved)
-
   dragIndex.value = null
 }
 
 async function loadFromCloud() {
-  const res = await axios.get(
-    "https://excelproxy.kin169999.workers.dev/api/excel",
-    { responseType: "arraybuffer" }
-  )
-  sheets.value = parseExcel(res.data)
-  switchSheet(0)
+  isLoading.value = true
+  try {
+    const res = await axios.get(
+      "https://excelproxy.kin169999.workers.dev/api/excel",
+      { responseType: "arraybuffer" }
+    )
+    sheets.value = parseExcel(res.data)
+    switchSheet(0)
+  } finally {
+    isLoading.value = false
+  }
 }
 
 async function loadFromUrl() {
   if (!excelUrl.value) return
-  const res = await axios.get(excelUrl.value, {
-    responseType: "arraybuffer"
-  })
-  sheets.value = parseExcel(res.data)
-  switchSheet(0)
+  isLoading.value = true
+  try {
+    const res = await axios.get(excelUrl.value, {
+      responseType: "arraybuffer"
+    })
+    sheets.value = parseExcel(res.data)
+    switchSheet(0)
+  } finally {
+    isLoading.value = false
+  }
 }
 
 function uploadExcel(e) {
   const file = e.target.files[0]
   if (!file) return
+  isLoading.value = true
+
   const reader = new FileReader()
   reader.onload = evt => {
     sheets.value = parseExcel(evt.target.result)
     switchSheet(0)
+    isLoading.value = false
   }
   reader.readAsArrayBuffer(file)
 }
@@ -306,25 +323,33 @@ function exportExcel() {
 </script>
 
 <style scoped>
-.layout { height:100vh; display:flex; flex-direction:column; background:#020617; color:#e5e7eb }
-.topbar { height:60px; border-bottom:1px solid #1e293b; display:flex; align-items:center; justify-content:space-between; padding:0 20px }
-.actions { display:flex; gap:10px }
-.actions button.export { background:#16a34a }
-.actions button.cloud { background:#0ea5e9 }
-.body { flex:1; display:flex; overflow:hidden }
-.sidebar { width:220px; border-right:1px solid #1e293b; padding:10px }
-.sheet-btn { padding:10px; margin-bottom:6px; border-radius:6px; cursor:pointer }
-.sheet-btn.active { background:#2563eb }
-.main { flex:1; padding:10px }
-.table-wrap { height:100%; overflow:auto; border:1px solid #1e293b; border-radius:8px }
-table { width:100%; border-collapse:collapse; table-layout:fixed }
-thead th { position:sticky; top:0; background:#0f172a; padding:8px }
-tr.row-error td { background:rgba(220,38,38,0.35)!important }
-td { border-bottom:1px solid #1e293b; padding:4px; vertical-align:middle }
-td.cell-editing { box-shadow: inset 0 0 0 2px #facc15 }
-.select,.number-input { width:100%; background:#020617; color:white; border:1px solid #334155; padding:4px; border-radius:4px }
-.editable { min-height:22px; outline:none }
-.delete-btn { background:none; border:none; cursor:pointer; font-size:16px; color:#94a3b8 }
-.delete-btn:hover { color:#ef4444 }
-.drag { cursor:grab; text-align:center; color:#64748b }
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.loading-box {
+  text-align: center;
+  color: white;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #334155;
+  border-top: 4px solid #38bdf8;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 10px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 </style>
