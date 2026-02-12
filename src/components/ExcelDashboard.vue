@@ -1,7 +1,6 @@
 <template>
   <div class="layout">
 
-    <!-- ===== Top Bar ===== -->
     <header class="topbar">
       <h1>🐟 魚種圖鑑 Excel 管理系統</h1>
 
@@ -23,19 +22,17 @@
 
     <div class="body">
 
-      <!-- ===== Sidebar ===== -->
       <aside class="sidebar">
         <div
           v-for="(sheet, idx) in sheets"
           :key="sheet.name"
           :class="['sheet-btn', { active: idx === activeSheetIndex }]"
-          @click="activeSheetIndex = idx"
+          @click="switchSheet(idx)"
         >
           {{ sheet.name }}
         </div>
       </aside>
 
-      <!-- ===== Main ===== -->
       <main class="main" v-if="activeSheet">
 
         <div class="table-wrap">
@@ -51,23 +48,20 @@
 
             <tbody>
               <tr
-                v-for="(row, r) in displayRows"
+                v-for="(row, r) in editableRows"
                 :key="r"
                 :class="[
                   'row-' + (r % 2),
                   isInvalidRow(row) ? 'row-error' : ''
                 ]"
               >
-                <td
-                  v-for="(cell, c) in row"
-                  :key="c"
-                  :class="{ error: isInvalidCell(row, c) }"
-                >
+                <td v-for="(cell, c) in row" :key="c">
 
                   <!-- 類型 -->
                   <select
                     v-if="c === TYPE_COL_INDEX"
-                    v-model.number="displayRows[r][c]"
+                    v-model.number="editableRows[r][c]"
+                    @change="checkAppendRow"
                     class="select"
                   >
                     <option
@@ -82,7 +76,8 @@
                   <!-- 標題 -->
                   <select
                     v-else-if="c === TITLE_COL_INDEX"
-                    v-model="displayRows[r][c]"
+                    v-model="editableRows[r][c]"
+                    @change="checkAppendRow"
                     class="select"
                   >
                     <option
@@ -94,20 +89,21 @@
                     </option>
                   </select>
 
-                  <!-- 倍率 -->
+                  <!-- 數字 -->
                   <input
                     v-else-if="c === MIN_COL_INDEX || c === MAX_COL_INDEX"
                     type="number"
-                    min="0"
+                    v-model.number="editableRows[r][c]"
+                    @input="checkAppendRow"
                     class="number-input"
-                    v-model.number="displayRows[r][c]"
                   />
 
-                  <!-- 其他 -->
+                  <!-- 文字 -->
                   <input
                     v-else
+                    v-model="editableRows[r][c]"
+                    @input="checkAppendRow"
                     class="text-input"
-                    v-model="displayRows[r][c]"
                   />
 
                 </td>
@@ -162,6 +158,41 @@ const TITLE_OPTIONS = [
 const excelUrl = ref("")
 const sheets = ref([])
 const activeSheetIndex = ref(0)
+const editableRows = ref([])
+
+/* ===========================
+   載入
+=========================== */
+
+function switchSheet(idx) {
+  activeSheetIndex.value = idx
+  prepareEditableRows()
+}
+
+function prepareEditableRows() {
+  const sheet = sheets.value[activeSheetIndex.value]
+  if (!sheet) return
+
+  editableRows.value = sheet.data
+    .slice(DATA_START_ROW)
+    .map(r => r.slice(0, COL_COUNT))
+
+  appendEmptyRowIfNeeded()
+}
+
+function appendEmptyRowIfNeeded() {
+  const last = editableRows.value.at(-1)
+  if (!last || last.some(v => v !== "" && v != null)) {
+    editableRows.value.push(new Array(COL_COUNT).fill(""))
+  }
+}
+
+function checkAppendRow() {
+  const last = editableRows.value.at(-1)
+  if (last && last.some(v => v !== "" && v != null)) {
+    editableRows.value.push(new Array(COL_COUNT).fill(""))
+  }
+}
 
 async function loadFromCloud() {
   const res = await axios.get(
@@ -169,7 +200,7 @@ async function loadFromCloud() {
     { responseType: "arraybuffer" }
   )
   sheets.value = parseExcel(res.data)
-  activeSheetIndex.value = 0
+  switchSheet(0)
 }
 
 function uploadExcel(e) {
@@ -178,19 +209,16 @@ function uploadExcel(e) {
   const reader = new FileReader()
   reader.onload = evt => {
     sheets.value = parseExcel(evt.target.result)
-    activeSheetIndex.value = 0
+    switchSheet(0)
   }
   reader.readAsArrayBuffer(file)
 }
 
 const activeSheet = computed(() => sheets.value[activeSheetIndex.value])
 
-const displayRows = computed(() => {
-  if (!activeSheet.value) return []
-  return activeSheet.value.data
-    .slice(DATA_START_ROW)
-    .map(row => row.slice(0, COL_COUNT))
-})
+/* ===========================
+   驗證
+=========================== */
 
 function isInvalidRow(row) {
   const min = Number(row[MIN_COL_INDEX])
@@ -198,21 +226,18 @@ function isInvalidRow(row) {
   return !isNaN(min) && !isNaN(max) && min > max
 }
 
-function isInvalidCell(row, col) {
-  if (col !== MIN_COL_INDEX && col !== MAX_COL_INDEX) return false
-  return isInvalidRow(row)
-}
+/* ===========================
+   匯出
+=========================== */
 
 function exportExcel() {
   const wb = XLSX.utils.book_new()
 
-  sheets.value.forEach(sheet => {
-    const data = sheet.data.map((r, i) => {
-      if (i < DATA_START_ROW) return r
-      return r.slice(0, COL_COUNT)
-    })
+  sheets.value.forEach((sheet, i) => {
+    const original = sheet.data.slice(0, DATA_START_ROW)
+    const merged = [...original, ...editableRows.value]
 
-    const ws = XLSX.utils.aoa_to_sheet(data)
+    const ws = XLSX.utils.aoa_to_sheet(merged)
     XLSX.utils.book_append_sheet(wb, ws, sheet.name)
   })
 
@@ -281,14 +306,6 @@ function exportExcel() {
 table {
   width: 100%;
   border-collapse: collapse;
-}
-
-thead th {
-  position: sticky;
-  top: 0;
-  background: #0f172a;
-  padding: 10px;
-  text-align: left;
 }
 
 td {
