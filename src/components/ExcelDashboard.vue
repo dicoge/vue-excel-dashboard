@@ -1,6 +1,7 @@
 <template>
   <div class="layout">
 
+    <!-- ===== Top Bar ===== -->
     <header class="topbar">
       <h1>🐟 魚種圖鑑 Excel 管理系統</h1>
 
@@ -22,6 +23,7 @@
 
     <div class="body">
 
+      <!-- ===== Sidebar ===== -->
       <aside class="sidebar">
         <div
           v-for="(sheet, idx) in sheets"
@@ -33,10 +35,12 @@
         </div>
       </aside>
 
+      <!-- ===== Main ===== -->
       <main class="main" v-if="activeSheet">
         <div class="table-wrap">
           <table>
 
+            <!-- Header -->
             <thead>
               <tr>
                 <th v-for="h in DISPLAY_HEADERS" :key="h">
@@ -45,6 +49,7 @@
               </tr>
             </thead>
 
+            <!-- Body -->
             <tbody>
               <tr
                 v-for="(row, r) in rows"
@@ -60,6 +65,7 @@
                   :class="{ error: isInvalidCell(row, c) }"
                 >
 
+                  <!-- 類型 -->
                   <select
                     v-if="c === TYPE_COL_INDEX"
                     v-model.number="rows[r][c]"
@@ -74,6 +80,7 @@
                     </option>
                   </select>
 
+                  <!-- 標題 -->
                   <select
                     v-else-if="c === TITLE_COL_INDEX"
                     v-model="rows[r][c]"
@@ -88,6 +95,7 @@
                     </option>
                   </select>
 
+                  <!-- 數字 -->
                   <input
                     v-else-if="c === MIN_COL_INDEX || c === MAX_COL_INDEX"
                     type="number"
@@ -96,6 +104,7 @@
                     v-model.number="rows[r][c]"
                   />
 
+                  <!-- 文字 -->
                   <div
                     v-else
                     contenteditable
@@ -114,6 +123,7 @@
       </main>
 
     </div>
+
   </div>
 </template>
 
@@ -124,11 +134,11 @@ import * as XLSX from "xlsx"
 import { parseExcel } from "../utils/excel"
 
 /* ============================= */
+/* 設定 */
+/* ============================= */
 
 const CLOUD_API =
   "https://excelproxy.kin169999.workers.dev/"
-
-/* ============================= */
 
 const DATA_START_ROW = 5
 const COL_COUNT = 7
@@ -160,11 +170,17 @@ const TITLE_OPTIONS = [
 ]
 
 /* ============================= */
+/* 狀態 */
+/* ============================= */
 
 const excelUrl = ref("")
 const sheets = ref([])
 const activeSheetIndex = ref(0)
 
+const activeSheet = computed(() => sheets.value[activeSheetIndex.value])
+
+/* ============================= */
+/* 載入 */
 /* ============================= */
 
 async function loadFromUrl() {
@@ -205,10 +221,8 @@ function uploadExcel(e) {
 }
 
 /* ============================= */
-
-const activeSheet = computed(() => {
-  return sheets.value[activeSheetIndex.value]
-})
+/* 計算（隱藏前五行） */
+/* ============================= */
 
 const rows = computed(() => {
   if (!activeSheet.value) return []
@@ -218,6 +232,8 @@ const rows = computed(() => {
     .map(row => row.slice(0, COL_COUNT))
 })
 
+/* ============================= */
+/* 驗證 */
 /* ============================= */
 
 function isInvalidRow(row) {
@@ -231,9 +247,19 @@ function isInvalidCell(row, col) {
   return isInvalidRow(row)
 }
 
-function updateCell(row, col, e) {
-  rows.value[row][col] = e.target.innerText
+/* ============================= */
+/* 編輯（正確寫回原始資料） */
+/* ============================= */
+
+function updateCell(rowIndex, colIndex, e) {
+  const realIndex = rowIndex + DATA_START_ROW
+  activeSheet.value.data[realIndex][colIndex] =
+    e.target.innerText
 }
+
+/* ============================= */
+/* 匯出（保留前五行） */
+/* ============================= */
 
 function exportExcel() {
   const wb = XLSX.utils.book_new()
@@ -251,3 +277,120 @@ function exportExcel() {
   XLSX.writeFile(wb, "fish_data_export.xlsx")
 }
 </script>
+
+<style scoped>
+.layout {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #020617;
+  color: #e5e7eb;
+}
+
+.topbar {
+  height: 60px;
+  border-bottom: 1px solid #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.actions button.export {
+  background: #16a34a;
+}
+
+.actions button.cloud {
+  background: #0ea5e9;
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 220px;
+  border-right: 1px solid #1e293b;
+  padding: 10px;
+}
+
+.sheet-btn {
+  padding: 10px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sheet-btn.active {
+  background: #2563eb;
+}
+
+.main {
+  flex: 1;
+  padding: 10px;
+}
+
+.table-wrap {
+  height: 100%;
+  overflow: auto;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: linear-gradient(180deg, #0f172a, #020617);
+  padding: 10px;
+  font-weight: 700;
+}
+
+tr.row-0 td {
+  background: #020617;
+}
+
+tr.row-1 td {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+tr.row-error td {
+  background: rgba(220, 38, 38, 0.18) !important;
+}
+
+td {
+  border-bottom: 1px solid #1e293b;
+  padding: 6px;
+}
+
+td.error {
+  outline: 2px solid #dc2626;
+}
+
+.select,
+.number-input {
+  width: 100%;
+  background: #020617;
+  color: white;
+  border: 1px solid #334155;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.editable {
+  min-height: 22px;
+  outline: none;
+}
+</style>
