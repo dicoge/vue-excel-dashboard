@@ -43,6 +43,7 @@
                 <th v-for="h in DISPLAY_HEADERS" :key="h">
                   {{ h }}
                 </th>
+                <th width="80">操作</th>
               </tr>
             </thead>
 
@@ -52,15 +53,16 @@
                 :key="r"
                 :class="[
                   'row-' + (r % 2),
-                  isInvalidRow(row) ? 'row-error' : ''
+                  isInvalidRow(row) ? 'row-error' : '',
+                  r === editingRow ? 'row-editing' : ''
                 ]"
               >
                 <td v-for="(cell, c) in row" :key="c">
 
-                  <!-- 類型 -->
                   <select
                     v-if="c === TYPE_COL_INDEX"
                     v-model.number="editableRows[r][c]"
+                    @focus="editingRow = r"
                     @change="checkAppendRow"
                     class="select"
                   >
@@ -73,10 +75,10 @@
                     </option>
                   </select>
 
-                  <!-- 標題 -->
                   <select
                     v-else-if="c === TITLE_COL_INDEX"
                     v-model="editableRows[r][c]"
+                    @focus="editingRow = r"
                     @change="checkAppendRow"
                     class="select"
                   >
@@ -89,24 +91,36 @@
                     </option>
                   </select>
 
-                  <!-- 數字 -->
                   <input
                     v-else-if="c === MIN_COL_INDEX || c === MAX_COL_INDEX"
                     type="number"
                     v-model.number="editableRows[r][c]"
+                    @focus="editingRow = r"
                     @input="checkAppendRow"
                     class="number-input"
                   />
 
-                  <!-- 文字 -->
                   <input
                     v-else
                     v-model="editableRows[r][c]"
+                    @focus="editingRow = r"
                     @input="checkAppendRow"
                     class="text-input"
                   />
 
                 </td>
+
+                <!-- 刪除按鈕 -->
+                <td>
+                  <button
+                    v-if="!isLastEmptyRow(r)"
+                    class="delete-btn"
+                    @click="deleteRow(r)"
+                  >
+                    刪除
+                  </button>
+                </td>
+
               </tr>
             </tbody>
 
@@ -159,10 +173,7 @@ const excelUrl = ref("")
 const sheets = ref([])
 const activeSheetIndex = ref(0)
 const editableRows = ref([])
-
-/* ===========================
-   載入
-=========================== */
+const editingRow = ref(null)
 
 function switchSheet(idx) {
   activeSheetIndex.value = idx
@@ -194,6 +205,16 @@ function checkAppendRow() {
   }
 }
 
+function deleteRow(index) {
+  editableRows.value.splice(index, 1)
+  appendEmptyRowIfNeeded()
+}
+
+function isLastEmptyRow(index) {
+  return index === editableRows.value.length - 1 &&
+         editableRows.value[index].every(v => v === "")
+}
+
 async function loadFromCloud() {
   const res = await axios.get(
     "https://excelproxy.kin169999.workers.dev/api/excel",
@@ -216,24 +237,16 @@ function uploadExcel(e) {
 
 const activeSheet = computed(() => sheets.value[activeSheetIndex.value])
 
-/* ===========================
-   驗證
-=========================== */
-
 function isInvalidRow(row) {
   const min = Number(row[MIN_COL_INDEX])
   const max = Number(row[MAX_COL_INDEX])
   return !isNaN(min) && !isNaN(max) && min > max
 }
 
-/* ===========================
-   匯出
-=========================== */
-
 function exportExcel() {
   const wb = XLSX.utils.book_new()
 
-  sheets.value.forEach((sheet, i) => {
+  sheets.value.forEach((sheet) => {
     const original = sheet.data.slice(0, DATA_START_ROW)
     const merged = [...original, ...editableRows.value]
 
@@ -311,6 +324,19 @@ table {
 td {
   padding: 6px;
   border-bottom: 1px solid #1e293b;
+}
+
+.row-editing td {
+  background: rgba(59,130,246,0.25) !important;
+}
+
+.delete-btn {
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .text-input,
