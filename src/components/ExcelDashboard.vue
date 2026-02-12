@@ -189,9 +189,19 @@ const activeSheet = computed(() =>
   sheets.value[activeSheetIndex.value]
 )
 
+/* ✅ 修正：強制每行固定 7 欄 */
 const rows = computed(() => {
   if (!activeSheet.value) return []
-  return activeSheet.value.data.slice(DATA_START_ROW)
+
+  return activeSheet.value.data
+    .slice(DATA_START_ROW)
+    .map(row => {
+      const fixed = [...row]
+      while (fixed.length < COL_COUNT) {
+        fixed.push("")
+      }
+      return fixed.slice(0, COL_COUNT)
+    })
 })
 
 function setEditing(r, c) {
@@ -202,7 +212,6 @@ function ensureEmptyRow() {
   const data = activeSheet.value.data
   const body = data.slice(DATA_START_ROW)
 
-  // 移除多餘空白行
   const filtered = body.filter(row =>
     row.some(v => v)
   )
@@ -241,7 +250,6 @@ function isInvalidCell(row, col) {
   return isInvalidRow(row)
 }
 
-/* ===== 排序 ===== */
 function sortRows() {
   const order = { 0: 0, 2: 1, 1: 2 }
 
@@ -260,7 +268,6 @@ function sortRows() {
   ]
 }
 
-/* ===== 拖曳 ===== */
 function dragStart(index) {
   dragIndex.value = index
 }
@@ -332,7 +339,7 @@ function exportExcel() {
 table { width:100%; border-collapse:collapse; table-layout:fixed }
 thead th { position:sticky; top:0; background:#0f172a; padding:8px }
 tr.row-error td { background:rgba(220,38,38,0.35)!important }
-td { border-bottom:1px solid #1e293b; padding:4px }
+td { border-bottom:1px solid #1e293b; padding:4px; vertical-align:middle }
 td.cell-editing { box-shadow: inset 0 0 0 2px #facc15 }
 .select,.number-input { width:100%; background:#020617; color:white; border:1px solid #334155; padding:4px; border-radius:4px }
 .editable { min-height:22px; outline:none }
