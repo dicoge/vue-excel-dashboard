@@ -10,7 +10,14 @@
     </div>
 
     <header class="topbar">
-      <h1>🐟 魚種圖鑑 Excel 管理系統</h1>
+      <div class="topbar-left">
+        <h1>📊 Excel 管理系統</h1>
+        <select v-model="currentProjectId" class="project-select" @change="switchProject">
+          <option v-for="(cfg, id) in PROJECTS" :key="id" :value="id">
+            {{ cfg.label }}
+          </option>
+        </select>
+      </div>
 
       <div class="actions">
         <input v-model="excelUrl" placeholder="輸入 Excel 網址" />
@@ -45,8 +52,8 @@
           <table>
             <thead>
               <tr>
-                <th width="30"></th>
-                <th v-for="h in DISPLAY_HEADERS" :key="h">
+                <th width="30" v-if="currentConfig.enableDrag"></th>
+                <th v-for="h in currentConfig.displayHeaders" :key="h">
                   {{ h }}
                 </th>
                 <th width="60">操作</th>
@@ -57,34 +64,33 @@
               <tr
                 v-for="(row, r) in rows"
                 :key="r"
-                :draggable="!isEmptyRow(row)"
-                @dragstart="dragStart(r)"
+                :draggable="currentConfig.enableDrag && !isEmptyRow(row)"
+                @dragstart="currentConfig.enableDrag ? dragStart(r) : null"
                 @dragover.prevent
-                @drop="dropRow(r)"
+                @drop="currentConfig.enableDrag ? dropRow(r) : null"
                 :class="isInvalidRow(row) ? 'row-error' : ''"
               >
-                <td class="drag" v-if="!isEmptyRow(row)">⋮⋮</td>
-                <td v-else></td>
+                <td class="drag" v-if="currentConfig.enableDrag && !isEmptyRow(row)">⋮⋮</td>
+                <td v-else-if="currentConfig.enableDrag"></td>
 
                 <td
                   v-for="(cell, c) in row"
                   :key="c"
                   :class="[
-                    isInvalidCell(row, c) ? 'error' : '',
-                    editingCell.row === r && editingCell.col === c
-                      ? 'cell-editing'
-                      : ''
+                    hasCellError(row, c) ? 'error' : '',
+                    editingCell.row === r && editingCell.col === c ? 'cell-editing' : ''
                   ]"
                 >
+                  <!-- 魚種-類型下拉 (fish project) -->
                   <select
-                    v-if="c === TYPE_COL_INDEX"
-                    v-model.number="activeSheet.data[DATA_START_ROW + r][c]"
+                    v-if="c === currentConfig.typeColIndex && PROJECTS[currentProjectId].id === 'fish'"
                     class="select"
+                    :value="getCellValue(r, c)"
                     @focus="setEditing(r, c)"
-                    @change="sortRows"
+                    @change="setCellValue(r, c, $event.target.value); sortRows()"
                   >
                     <option
-                      v-for="opt in TYPE_OPTIONS"
+                      v-for="opt in currentConfig.typeOptions"
                       :key="opt.value"
                       :value="opt.value"
                     >
@@ -92,14 +98,16 @@
                     </option>
                   </select>
 
+                  <!-- 魚種-標題下拉 (fish project) -->
                   <select
-                    v-else-if="c === TITLE_COL_INDEX"
-                    v-model="activeSheet.data[DATA_START_ROW + r][c]"
+                    v-else-if="c === currentConfig.titleColIndex && PROJECTS[currentProjectId].id === 'fish'"
                     class="select"
+                    :value="getCellValue(r, c)"
                     @focus="setEditing(r, c)"
+                    @change="setCellValue(r, c, $event.target.value)"
                   >
                     <option
-                      v-for="opt in TITLE_OPTIONS"
+                      v-for="opt in currentConfig.titleOptions"
                       :key="opt.value"
                       :value="opt.value"
                     >
@@ -107,14 +115,18 @@
                     </option>
                   </select>
 
+                  <!-- 數字輸入欄位 -->
                   <input
-                    v-else-if="c === MIN_COL_INDEX || c === MAX_COL_INDEX"
+                    v-else-if="isNumberCol(c)"
                     type="number"
                     class="number-input"
-                    v-model.number="activeSheet.data[DATA_START_ROW + r][c]"
+                    :class="{ 'value-error': isValueCol(c) && !isValidValue(cell) }"
+                    :value="cell"
+                    @input="onNumberInput(r, c, $event)"
                     @focus="setEditing(r, c)"
                   />
 
+                  <!-- 一般可編輯欄位 -->
                   <div
                     v-else
                     contenteditable
@@ -150,34 +162,45 @@ import axios from "axios"
 import * as XLSX from "xlsx"
 import { parseExcel } from "../utils/excel"
 
-const DATA_START_ROW = 5
-const COL_COUNT = 7
+// ===== 專案設定 =====
+const PROJECTS = {
+  fish: {
+    id: 'fish',
+    label: "🐟 魚種圖鑑",
+    dataStartRow: 5,
+    displayHeaders: ["魚種類型", "魚種名稱", "最小倍率", "最高倍率", "Tag", "標題", "類型"],
+    visibleCols: [0, 1, 2, 3, 4, 5, 6],
+    numberCols: [2, 3],        // visible indices 最小倍率, 最高倍率
+    minColIndex: 2,            // visible index for 最小倍率
+    maxColIndex: 3,            // visible index for 最高倍率
+    typeColIndex: 6,           // visible index for 類型
+    titleColIndex: 5,          // visible index for 標題
+    typeOptions: [
+      { value: 0, label: "一般魚" },
+      { value: 2, label: "Boss" },
+      { value: 1, label: "活動魚" }
+    ],
+    titleOptions: [
+      { value: "NONE", label: "無" },
+      { value: "J", label: "金蟬大獎" }
+    ],
+    enableDrag: true,
+    enableSort: true
+  },
+  item: {
+    id: 'item',
+    label: "🎒 道具表",
+    dataStartRow: 4,
+    displayHeaders: ["物品ID", "ItemSID", "名稱", "道具價值", "類型", "說明"],
+    visibleCols: [0, 1, 2, 5, 7, 19],  // col 19 = 說明(Tip), col 20 = 說明2(Tip2=全部NONE)
+    numberCols: [0, 3],        // visible indices: 0=物品ID, 3=道具價值
+    valueColIndex: 3,          // visible index for 道具價值 (需數字驗證)
+    enableDrag: false,
+    enableSort: false
+  }
+}
 
-const DISPLAY_HEADERS = [
-  "魚種類型",
-  "魚種名稱",
-  "最小倍率",
-  "最高倍率",
-  "Tag",
-  "標題",
-  "類型"
-]
-
-const MIN_COL_INDEX = 2
-const MAX_COL_INDEX = 3
-const TITLE_COL_INDEX = 5
-const TYPE_COL_INDEX = 6
-
-const TYPE_OPTIONS = [
-  { value: 0, label: "一般魚" },
-  { value: 2, label: "Boss" },
-  { value: 1, label: "活動魚" }
-]
-
-const TITLE_OPTIONS = [
-  { value: "NONE", label: "無" },
-  { value: "J", label: "金蟬大獎" }
-]
+const currentProjectId = ref("fish")
 
 const excelUrl = ref("")
 const sheets = ref([])
@@ -186,19 +209,73 @@ const editingCell = ref({ row: null, col: null })
 const dragIndex = ref(null)
 const isLoading = ref(false)
 
+const currentConfig = computed(() => PROJECTS[currentProjectId.value])
 const activeSheet = computed(() => sheets.value[activeSheetIndex.value])
 
+// ===== 資料行（根據 visibleCols 映射） =====
 const rows = computed(() => {
   if (!activeSheet.value) return []
+  const cfg = currentConfig.value
   return activeSheet.value.data
-    .slice(DATA_START_ROW)
+    .slice(cfg.dataStartRow)
     .map(row => {
-      const fixed = [...row]
-      while (fixed.length < COL_COUNT) fixed.push("")
-      return fixed.slice(0, COL_COUNT)
+      // 只取 visibleCols 對應的欄位
+      return cfg.visibleCols.map(colIdx => {
+        const val = row[colIdx]
+        return val !== undefined && val !== null ? val : ""
+      })
     })
 })
 
+function getCellValue(rowIdx, visibleColIdx) {
+  const cfg = currentConfig.value
+  const dataRow = cfg.dataStartRow + rowIdx
+  const actualCol = cfg.visibleCols[visibleColIdx]
+  return activeSheet.value.data[dataRow]?.[actualCol] ?? ""
+}
+
+function setCellValue(rowIdx, visibleColIdx, value) {
+  const cfg = currentConfig.value
+  const dataRow = cfg.dataStartRow + rowIdx
+  const actualCol = cfg.visibleCols[visibleColIdx]
+  activeSheet.value.data[dataRow][actualCol] = value
+  ensureEmptyRow()
+}
+
+function isNumberCol(visibleIdx) {
+  return currentConfig.value.numberCols.includes(visibleIdx)
+}
+
+function isValueCol(visibleIdx) {
+  return currentConfig.value.valueColIndex !== undefined &&
+         visibleIdx === currentConfig.value.valueColIndex
+}
+
+function isValidValue(val) {
+  if (val === "" || val === null || val === undefined) return true
+  const n = Number(val)
+  return !isNaN(n) && isFinite(n)
+}
+
+function onNumberInput(r, c, e) {
+  const cfg = currentConfig.value
+  const dataRow = cfg.dataStartRow + r
+  const actualCol = cfg.visibleCols[c]
+  const raw = e.target.value
+  // Allow empty or valid number
+  if (raw === "" || raw === "-") {
+    activeSheet.value.data[dataRow][actualCol] = raw
+  } else {
+    const n = Number(raw)
+    if (!isNaN(n)) {
+      activeSheet.value.data[dataRow][actualCol] = n
+    }
+    // If invalid, don't update (field stays as-is)
+  }
+  ensureEmptyRow()
+}
+
+// ===== 工作表切換 =====
 function switchSheet(index) {
   activeSheetIndex.value = index
   ensureEmptyRow()
@@ -206,70 +283,91 @@ function switchSheet(index) {
 
 function ensureEmptyRow() {
   if (!activeSheet.value) return
+  const cfg = currentConfig.value
   const data = activeSheet.value.data
-  const body = data.slice(DATA_START_ROW).filter(r => r.some(v => v))
+  const body = data.slice(cfg.dataStartRow).filter(r => r.some(v => v && String(v).trim() !== ""))
   activeSheet.value.data = [
-    ...data.slice(0, DATA_START_ROW),
+    ...data.slice(0, cfg.dataStartRow),
     ...body,
-    new Array(COL_COUNT).fill("")
+    new Array(cfg.colCount).fill("")
   ]
 }
 
 function deleteRow(index) {
-  activeSheet.value.data.splice(DATA_START_ROW + index, 1)
+  const cfg = currentConfig.value
+  activeSheet.value.data.splice(cfg.dataStartRow + index, 1)
   ensureEmptyRow()
 }
 
-function isEmptyRow(row) {
-  return row.every(v => !v)
+function isEmptyRow(visibleRow) {
+  return visibleRow.every(v => !v || String(v).trim() === "")
 }
 
 function updateCell(row, col, e) {
-  activeSheet.value.data[DATA_START_ROW + row][col] =
-    e.target.innerText
+  const cfg = currentConfig.value
+  const dataRow = cfg.dataStartRow + row
+  const actualCol = cfg.visibleCols[col]
+  activeSheet.value.data[dataRow][actualCol] = e.target.innerText
   ensureEmptyRow()
 }
 
+// ===== 魚種專用：驗證 最小倍率 <= 最高倍率 =====
 function isInvalidRow(row) {
-  const min = Number(row[MIN_COL_INDEX])
-  const max = Number(row[MAX_COL_INDEX])
+  const cfg = currentConfig.value
+  if (!cfg.enableDrag) return false  // only fish project has this validation
+  const min = Number(row[cfg.minColIndex])
+  const max = Number(row[cfg.maxColIndex])
   return !isNaN(min) && !isNaN(max) && min > max
 }
 
-function isInvalidCell(row, col) {
-  if (col !== MIN_COL_INDEX && col !== MAX_COL_INDEX) return false
-  return isInvalidRow(row)
+function hasCellError(row, col) {
+  const cfg = currentConfig.value
+  // Fish: min/max ratio validation
+  if (cfg.enableDrag && (col === cfg.minColIndex || col === cfg.maxColIndex)) {
+    return isInvalidRow(row)
+  }
+  // Item: 道具價值 must be valid number
+  if (isValueCol(col)) {
+    return !isValidValue(row[col])
+  }
+  return false
 }
 
+// ===== 魚種專用：排序 =====
 function sortRows() {
+  if (!currentConfig.value.enableSort) return
+  const cfg = currentConfig.value
   const order = { 0: 0, 2: 1, 1: 2 }
   const body = activeSheet.value.data
-    .slice(DATA_START_ROW)
+    .slice(cfg.dataStartRow)
     .filter(r => r.some(v => v))
 
-  body.sort((a, b) => order[a[TYPE_COL_INDEX]] - order[b[TYPE_COL_INDEX]])
+  body.sort((a, b) => order[a[cfg.visibleCols[cfg.typeColIndex]]] - order[b[cfg.visibleCols[cfg.typeColIndex]]])
 
   activeSheet.value.data = [
-    ...activeSheet.value.data.slice(0, DATA_START_ROW),
+    ...activeSheet.value.data.slice(0, cfg.dataStartRow),
     ...body,
-    new Array(COL_COUNT).fill("")
+    new Array(cfg.colCount).fill("")
   ]
 }
 
+// ===== 魚種專用：拖曳排序 =====
 function dragStart(index) {
   dragIndex.value = index
 }
 
 function dropRow(targetIndex) {
   if (dragIndex.value === null) return
-  const from = DATA_START_ROW + dragIndex.value
-  const to = DATA_START_ROW + targetIndex
+  const cfg = currentConfig.value
+  const from = cfg.dataStartRow + dragIndex.value
+  const to = cfg.dataStartRow + targetIndex
   const data = activeSheet.value.data
   const moved = data.splice(from, 1)[0]
   data.splice(to, 0, moved)
   dragIndex.value = null
 }
 
+// ===== 載入 =====
 async function loadFromCloud() {
   isLoading.value = true
   try {
@@ -318,7 +416,12 @@ function exportExcel() {
     const ws = XLSX.utils.aoa_to_sheet(sheet.data)
     XLSX.utils.book_append_sheet(wb, ws, sheet.name)
   })
-  XLSX.writeFile(wb, "fish_data_export.xlsx")
+  XLSX.writeFile(wb, "data_export.xlsx")
+}
+
+function switchProject() {
+  sheets.value = []
+  activeSheetIndex.value = 0
 }
 </script>
 
@@ -345,10 +448,31 @@ function exportExcel() {
   background: linear-gradient(180deg, #0f172a, #020617);
 }
 
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .topbar h1 {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.project-select {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.project-select:hover {
+  border-color: #2563eb;
 }
 
 .actions {
@@ -493,6 +617,11 @@ td.error {
   border-radius: 6px;
 }
 
+.number-input.value-error {
+  border-color: #ef4444;
+  outline: 1px solid #ef4444;
+}
+
 .editable {
   min-height: 22px;
   outline: none;
@@ -511,10 +640,6 @@ td.error {
 }
 
 /* ===== 刪除按鈕 ===== */
-.delete-cell {
-  text-align: center;
-}
-
 .delete-btn {
   background: none;
   border: none;
@@ -545,4 +670,3 @@ td.error {
 }
 
 </style>
-
